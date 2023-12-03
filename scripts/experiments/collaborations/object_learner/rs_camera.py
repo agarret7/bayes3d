@@ -44,10 +44,6 @@ class RSCamera:
         else:
             self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
-        if os.path.exists(datadir):
-            shutil.rmtree(datadir)
-        os.makedirs(datadir)
-
         self.datadir = datadir
 
     def start(self):
@@ -62,9 +58,7 @@ class RSCamera:
         ppy = float(intr.ppy) # Principle Point Offsey of y (aka. cy)
         axs = 0.0 # Axis skew
 
-        self.cam_intrinsics = np.array([[fx, axs, ppx],
-                                        [0.0, fy, ppy],
-                                        [0.0, 0.0, 1.0]])
+        self.cam_intrinsics = b.Intrinsics(480,640,fx,fy,ppx,ppy,0.001,255.0)
 
     def cap(self) -> b.RGBD:
 
@@ -79,21 +73,11 @@ class RSCamera:
         color_image = np.asanyarray(color_frame.get_data())
         depth_image = np.asanyarray(depth_frame.get_data())
 
-        # # Apply colormap on depth image (image must be converted to 8-bit per pixel first)
+        # Apply colormap on depth image (image must be converted to 8-bit per pixel first)
         depth_colormap = cv2.applyColorMap(cv2.convertScaleAbs(depth_image, alpha=0.03), cv2.COLORMAP_JET)
 
-        # depth_colormap_dim = depth_colormap.shape
-        # color_colormap_dim = color_image.shape
-
-        # # If depth and color resolutions are different, resize color image to match depth image for display
-        # if depth_colormap_dim != color_colormap_dim:
-        #     print("RESIZING")
-        #     resized_color_image = cv2.resize(color_image, dsize=(depth_colormap_dim[1], depth_colormap_dim[0]), interpolation=cv2.INTER_AREA)
-        #     images = np.hstack((resized_color_image, depth_colormap))
-        # else:
-        images = np.hstack((color_image, depth_colormap))
-
         # Show images
+        images = np.hstack((color_image, depth_colormap))
         cv2.namedWindow('RealSense', cv2.WINDOW_AUTOSIZE)
         cv2.imshow('RealSense', images)
         cv2.waitKey(1)
@@ -103,7 +87,10 @@ class RSCamera:
     def stop(self):
         self.pipeline.stop()
 
-    def save_scan(self, num_frames: int, delay_ms: Union[float,None] = 0.0, burnin: int = 10) -> List[b.RGBD]:
+    def save_scan(self, num_frames: int, delay_ms: Union[float,None] = 0.0, burnin: int = 10) -> bool:
+        if os.path.exists(self.datadir):
+            shutil.rmtree(self.datadir)
+        os.makedirs(self.datadir)
         i = 0
         try:
             self.start()
@@ -127,12 +114,14 @@ class RSCamera:
             self.stop()
         return os.listdir(self.datadir) == num_frames
 
-    def fetch_cache(self) -> List[b.RGBD]:
-        paths = os.listdir(self.datadir)
-        paths.sort()
-        images = []
-        for p in paths:
-            with open(self.datadir + '/' + p, 'rb') as fp:
-                rgbd = pkl.load(fp)
-                images.append(rgbd)
-        return images
+def fetch_images(datadir) -> List[b.RGBD]:
+    paths = os.listdir(datadir)
+    if len(paths) == 0:
+        return None
+    paths.sort()
+    images = []
+    for p in paths:
+        with open(datadir + '/' + p, 'rb') as fp:
+            rgbd = pkl.load(fp)
+            images.append(rgbd)
+    return images
